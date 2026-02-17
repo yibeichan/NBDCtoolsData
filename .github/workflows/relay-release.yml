@@ -35,8 +35,8 @@ jobs:
             TARGET_REPO="HBCD"
             echo "Even major version $MAJOR -> HBCD"
           else
-            # Odd major version -> ABCD (version = major+2.patch)
-            TARGET_MAJOR=$((MAJOR + 2))
+            # Odd major version -> ABCD (version = (major+9)/2.patch)
+            TARGET_MAJOR=$(( (MAJOR + 9) / 2 ))
             TARGET_REPO="ABCD"
             echo "Odd major version $MAJOR -> ABCD"
           fi
