@@ -1,0 +1,90 @@
+name: Relay NBDC Release to ReproSchema
+
+on:
+  release:
+    types: [released]
+
+permissions:
+  contents: read
+
+jobs:
+  relay:
+    if: github.repository == 'nbdc-datahub/NBDCtoolsData'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version and determine target
+        id: version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+
+          # Validate version format (must be x.x.x)
+          if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid version format: $VERSION"
+            echo "Expected format: x.x.x (e.g., 4.0.0, 5.0.1)"
+            exit 1
+          fi
+
+          # Extract major and patch versions
+          MAJOR=$(echo "$VERSION" | cut -d'.' -f1)
+          PATCH=$(echo "$VERSION" | cut -d'.' -f3)
+
+          if (( MAJOR % 2 == 0 )); then
+            # Even major version -> HBCD (version = major/2.patch)
+            TARGET_MAJOR=$((MAJOR / 2))
+            TARGET_REPO="HBCD"
+            echo "Even major version $MAJOR -> HBCD"
+          else
+            # Odd major version -> ABCD (version = (major+9)/2.patch)
+            TARGET_MAJOR=$(( (MAJOR + 9) / 2 ))
+            TARGET_REPO="ABCD"
+            echo "Odd major version $MAJOR -> ABCD"
+          fi
+
+          TARGET_VERSION="${TARGET_MAJOR}.${PATCH}"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "target_version=$TARGET_VERSION" >> $GITHUB_OUTPUT
+          echo "target_repo=$TARGET_REPO" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+          echo "Target repo: $TARGET_REPO"
+          echo "Target version: $TARGET_VERSION"
+
+      - name: Generate GitHub App token
+        id: app_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.NBDC_CHECK_APP_ID }}
+          private-key: ${{ secrets.NBDC_CHECK_APP_PRIVATE_KEY }}
+
+      - name: Trigger ABCD-ReproSchema workflow
+        if: steps.version.outputs.target_repo == 'ABCD'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ steps.app_token.outputs.token }}
+          repository: ReproNim/ABCD-ReproSchema
+          event-type: nbdc-release
+          client-payload: |
+            {
+              "release": "${{ steps.version.outputs.target_version }}",
+              "create_tag": true,
+              "source_repo": "${{ github.repository }}",
+              "release_url": "${{ github.event.release.html_url }}",
+              "triggered_by": "${{ github.actor }}"
+            }
+
+      - name: Trigger HBCD-ReproSchema workflow
+        if: steps.version.outputs.target_repo == 'HBCD'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ steps.app_token.outputs.token }}
+          repository: ReproNim/HBCD-ReproSchema
+          event-type: nbdc-release
+          client-payload: |
+            {
+              "release": "${{ steps.version.outputs.target_version }}",
+              "create_tag": true,
+              "source_repo": "${{ github.repository }}",
+              "release_url": "${{ github.event.release.html_url }}",
+              "triggered_by": "${{ github.actor }}"
+            }
